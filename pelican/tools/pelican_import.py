@@ -138,11 +138,35 @@ def get_filename(post_name, post_id):
         return post_name
 
 
+def wp_post_ids(soup):
+    post_ids = {}
+    items = soup.rss.channel.findAll('item')
+    for item in items:
+        post_link = item.find('link').string
+        post_ids[item.find('post_id').string] = post_link
+    return post_ids
+
+
+def wp_resolve_attachment_posts(find_attachments_re, post_ids, content):
+    for attachment_url, attachment_id in \
+            find_attachments_re.findall(content):
+        new_attachment_url = post_ids.get(attachment_id)
+        if new_attachment_url is not None:
+            content = content.replace(attachment_url, new_attachment_url)
+    return content
+
+
 def wp2fields(xml, wp_custpost=False):
     """Opens a wordpress XML file, and yield Pelican fields"""
 
     soup = xml_to_soup(xml)
+    link = soup.rss.link.string
     items = soup.rss.channel.findAll('item')
+    post_ids = wp_post_ids(soup)
+
+    find_attachments_re = re.compile(
+        r"({}(\d+))".format(re.escape(link + "/?attachment_id="))
+    )
     for item in items:
 
         if item.find('status').string in ["publish", "draft"]:
@@ -192,6 +216,11 @@ def wp2fields(xml, wp_custpost=False):
                     pass
                 else:
                     kind = post_type
+
+            content = wp_resolve_attachment_posts(find_attachments_re,
+                                                  post_ids,
+                                                  content)
+
             yield (title, content, filename, date, author, categories,
                    tags, status, kind, 'wp-html')
 
